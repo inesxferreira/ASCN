@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: laravel-io
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: laravel-io
+  template:
+    metadata:
+      labels:
+        app: laravel-io
+    spec:
+      containers:
+      - name: laravel-io
+        image: "{{ laravel_image_repository }}:latest"
+        ports:
+        - containerPort: 80

@@ -1,0 +1,122 @@
+---
+# Create a service for laravelio
+- name: Create laravelio Service
+  kubernetes.core.k8s:
+    state: present
+    namespace: default
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: laravelio-service
+        labels:
+          app: laravelio
+      spec:
+        type: LoadBalancer
+        selector:
+          app: laravelio
+        ports:
+          - protocol: TCP
+            port: 80  #externo
+            targetPort: 8000
+
+- name : Get node2
+  shell: kubectl get nodes |  awk '{ print $1}' | grep -v NAME | sed -n '2p'
+  register : node2
+
+- name: node 2
+  debug: 
+   var: node2.stdout
+
+
+- name: Create a Deployment for laravelio
+  kubernetes.core.k8s:
+    state: present
+    namespace: default
+    definition:
+      kind: Deployment
+      metadata:
+        name: laravel-deployment
+        labels:
+          app: laravelio
+      spec:
+        selector:
+          matchLabels:
+            app: laravelio
+        template:
+          metadata:
+            labels:
+              app: laravelio
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: "{{ node2.stdout }}"
+
+            containers:
+            - name: laravelio
+              image: "{{ laravel_image_repository }}"
+              ports:
+              - containerPort: 8000 
+              resources:
+                requests:
+                  cpu: "100m"
+              env:
+              - name: url
+                value: "http://{{ app_ip }}:{{ app_port }}"
+              - name: database__client
+                value: mysql
+              - name: database__connection__host
+                value: "{{ MYSQL_HOST }}"
+              - name: database__connection__user
+                value: "{{ MYSQL_USER }}"
+              - name: database__connection__password
+                value: "{{ MYSQL_PASSWORD }}"
+              - name: database__connection__database
+                value: "{{ MYSQL_DATABASE }}"
+              - name: database__connection__port
+                value: "3306"
+              - name: SEED_DATABASE
+                value: "true"
+
+
+# Get db pod
+- name: get db pod
+  kubernetes.core.k8s_info:
+    kind: Pod
+    label_selectors:
+      - app=mysql
+  register: db_pod
+
+# Wait for db pod is ready
+- name: Wait for db pod is ready
+  shell: kubectl get pod {{ db_pod.resources[0].metadata.name }} -o jsonpath='{.status.phase}'
+  register: db_pod_ready
+  until: db_pod_ready.stdout.find("Running") != -1
+  retries: 30
+  delay: 30
+
+# Replace IP in test file
+- name: Replace app_ip in test file back to placeholder
+  replace:
+    path: 'http_request.jmx'
+    regexp: '<stringProp name="HTTPSampler.domain">\S*</stringProp>'
+    replace: '<stringProp name="HTTPSampler.domain">{{ app_ip }}</stringProp>'
+
+
+- name: Verificar se o Auto Scaling já está configurado
+  shell: kubectl get hpa laravel-deployment
+  register: autoscale_status
+  ignore_errors: true  # Ignorar erros, pois o comando pode falhar se o HPA não estiver configurado
+
+
+- name: Escalar o deployment (se necessário)
+  command: kubectl autoscale deployment laravel-deployment --min=1 --max=3 --cpu-percent=80
+  when: "'No resources found' in autoscale_status.stdout or autoscale_status.rc==1"
+
+# Set the project on the environment
+#- name: Set the project on the Google Cloud environment
+#  ansible.builtin.shell:
+#      cmd: gcloud config set project "{{ gcp_project }}"
+
+# Create a firewall rule for laravelio to allow trafic through port 80
+#- name: Create a firewall rule for laravelio
+#  script: chmod +x firewall.sh

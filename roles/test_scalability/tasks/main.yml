@@ -1,0 +1,6 @@
+---
+
+- name: Change test ip
+  template:
+    src: test_Users
+    dest: Tests/Testes.jmx

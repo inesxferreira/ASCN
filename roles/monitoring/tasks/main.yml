@@ -1,0 +1,57 @@
+---
+- name: List dashboards
+  shell : "gcloud monitoring dashboards list --project={{ gcp_project }}"
+  register: dashboards_result
+
+- name: Verify if the dashboard exists
+  set_fact:
+   dashboard_exists: "{{ 'Ascn-dashboard-v4' in dashboards_result.stdout }}"
+
+
+- name: Install Metrics Dashboard
+  shell : gcloud monitoring dashboards create --config-from-file=dashboard.json
+
+- name: Download CLI gcloud
+  shell: curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-458.0.0-linux-x86_64.tar.gz -o downloads/google-cloud-cli-458.0.0-linux-x86_64.tar.gz 
+  register: download_result
+
+- name: Extract CLI gcloud
+  shell: "tar -xf downloads/google-cloud-cli-458.0.0-linux-x86_64.tar.gz -C downloads"
+  when: download_result.rc == 0
+  register: extract_result
+
+- name: Install CLI gcloud
+  shell: "downloads/google-cloud-sdk/install.sh"
+  when: extract_result.rc == 0
+  register: install_result
+
+- name: Restart Terminal
+  shell: "reset"
+  when: install_result.rc == 0
+  register: restart_result
+
+- name: Execute gcloud init
+  shell: "downloads/google-cloud-sdk/bin/gcloud init"
+  when: restart_result.rc == 0
+
+- name: Install Google Cloud Policy
+  shell: "gcloud components install beta"
+  register: install_result
+
+- name: Verify CLI gcloud components
+  shell: "gcloud components list"
+  register: install_result
+
+- name: Install Permissions
+  shell: "bash set-permissions.sh --project={{ gcp_project }}"
+  when: install_result.rc == 0
+  register: permissions_result
+
+- name: Create Policy
+  shell: gcloud beta compute instances ops-agents policies create ops-agents-laravelio-monitoring-policy --agent-rules="type=ops-agent,enable-autoupgrade=true" --os-types="short-name=ubuntu,version=22.04" 
+
+- name: Delete Files
+  shell: "rm -r downloads/*"
+
+
+# gcloud beta compute instances ops-agents policies delete ops-agents-laravelio-monitoring-policy

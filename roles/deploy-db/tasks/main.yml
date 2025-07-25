@@ -1,0 +1,92 @@
+---
+
+- name: Create a pod for MySQL db
+  kubernetes.core.k8s:
+    state: present
+    namespace: default
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: mysql-deployment
+        labels:
+          app: mysql
+          tier: database
+      spec:
+        selector:
+          matchLabels:
+            app: mysql
+        strategy:
+          type: Recreate
+        template:
+          metadata:
+            labels:
+              app: mysql
+              tier: database
+          spec:
+            containers:
+            - name: mysql
+              image: "{{ mysql_image }}"
+              env:
+              - name: MYSQL_ALLOW_EMPTY_PASSWORD
+                value: "true"
+              - name: MYSQL_DATABASE
+                value: "{{ mysql_name_db }}"
+              - name: MYSQL_USER
+                value: "{{ mysql_user }}"
+              - name: MYSQL_PASSWORD
+                value: "{{ mysql_password }}"
+              ports:
+              - containerPort: 3306
+              volumeMounts:
+              - name: mysql-persistent-storage
+                mountPath: /var/lib/mysql
+            volumes:
+            - name: mysql-persistent-storage
+              persistentVolumeClaim:
+                claimName: mysql-pv-claim
+
+# check if storage class exists
+- name: get the StorageClass
+  kubernetes.core.k8s_info:
+    kind: StorageClass
+    label_selectors:
+      - app=mysql
+      - tier=database
+  register: mysql_storage_class
+- debug:
+    var: mysql_storage_class
+  
+# run only if there isnt already a storage class
+- name: Create PV storage class
+  kubernetes.core.k8s:
+    state: present
+    namespace: default
+    src: "mysql-pv-create.yml"
+  when: mysql_storage_class.resources is not defined or (mysql_storage_class.resources==[])
+
+- name: Create a persistent volume claim for SQL Server
+  kubernetes.core.k8s:
+    state: present
+    namespace: default
+    src: "mysql-pvc.yml"
+
+- name: Create a service for SQL Server
+  kubernetes.core.k8s:
+    state: present
+    namespace: default
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ mysql_host }}" # service / dns name
+        labels:
+          app: mysql
+          tier: database
+      spec:
+        type: ClusterIP
+        selector:
+          app: mysql
+        ports:
+          - targetPort: "{{ mysql_tp }}"
+            port: "{{ mysql_p }}"

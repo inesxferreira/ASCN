@@ -1,0 +1,51 @@
+#undeploy do laravel
+
+- name: Get laravelio deployment
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    label_selectors:
+      - app=laravelio
+  register: laravelio_deployment
+
+- name: Undeploy laravalio deployment
+  kubernetes.core.k8s:
+    state: absent
+    namespace: default
+    definition: "{{ laravelio_deployment.resources[0] }}"
+  when: laravelio_deployment.resources | length > 0
+
+- name: Wait for Laravelio deployment to be deleted
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    label_selectors:
+      - app=laravelio
+  register: laravelio_deployment
+  until: laravelio_deployment.resources | length == 0
+  retries: 10
+  delay: 10
+
+- name: Get laravelio service
+  kubernetes.core.k8s_info:
+    kind: Service
+    label_selectors:
+      - app=laravelio
+  register: laravelio_service
+
+- name: Undeploy Laravelio service
+  kubernetes.core.k8s:
+    state: absent
+    namespace: default
+    definition: "{{ laravelio_service.resources[0] }}"
+  when: laravelio_service.resources | length > 0
+
+- name: Wait for laravelio service to be deleted
+  kubernetes.core.k8s_info:
+    kind: Service
+    label_selectors:
+      - app=laravelio
+  register: laravelio_service
+  until: laravelio_service.resources | length == 0
+  retries: 10
+  delay: 10
+
+

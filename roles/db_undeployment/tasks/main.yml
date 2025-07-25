@@ -1,0 +1,60 @@
+#undeployment db
+- name: Get MySQL deployment
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    label_selectors:
+      - app=mysql
+      - tier=database
+  register: mysql_deployment
+
+- name: Undeploy MySQL deployment
+  kubernetes.core.k8s:
+    state: absent
+    namespace: default
+    definition: "{{ mysql_deployment.resources[0] }}"
+  when: mysql_deployment.resources | length > 0
+
+- name: Wait for MySQL deployment to be deleted
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    label_selectors:
+      - app=mysql
+      - tier=database
+  register: mysql_deployment
+  until: mysql_deployment.resources | length == 0
+  retries: 10
+  delay: 10
+
+- name: Get MySQL service
+  kubernetes.core.k8s_info:
+    kind: Service
+    label_selectors:
+      - app=mysql
+      - tier=database
+  register: mysql_service
+
+- name: Undeploy MySQL service
+  kubernetes.core.k8s:
+    state: absent
+    namespace: default
+    definition: "{{ mysql_service.resources[0] }}"
+  when: mysql_service.resources | length > 0
+
+- name: Wait for MySQL service to be deleted
+  kubernetes.core.k8s_info:
+    kind: Service
+    label_selectors:
+      - app=mysql
+      - tier=database
+  register: mysql_service
+  until: mysql_service.resources | length == 0
+  retries: 10
+  delay: 10
+
+- name: Get MySQL persistent volume claim
+  kubernetes.core.k8s_info:
+    kind: PersistentVolumeClaim
+    label_selectors:
+      - app=mysql
+      - tier=database
+  register: mysql_pvc

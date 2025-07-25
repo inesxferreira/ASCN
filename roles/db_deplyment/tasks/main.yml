@@ -1,0 +1,148 @@
+
+- name: Create a storage class for SQL Server
+  kubernetes.core.k8s:
+    state: present
+    namespace: default
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: mysql-pv-storage
+        labels:
+          app: mysql
+          tier: database
+      provisioner: pd.csi.storage.gke.io
+      volumeBindingMode: WaitForFirstConsumer
+      allowVolumeExpansion: true
+      reclaimPolicy: Retain
+      parameters:
+        type: pd-balanced
+
+- name: Create a Persist Volume for SQL Server
+  kubernetes.core.k8s:
+    state: present
+    namespace: default
+    definition:
+      apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: mysql-pv
+        labels:
+          app: mysql
+          tier: database
+      spec:
+        reclaimPolicy: Retain
+        storageClassName: mysql-pv-storage
+        capacity:
+          storage: 10Gi
+        claimRef:
+          name: mysql-pv-claim
+        accessModes:
+          - ReadWriteOnce
+        csi:
+          driver: pd.csi.storage.gke.io
+          volumeHandle: mysql-pv
+          fsType: ext4
+
+- name: Create a persistent volume claim for SQL Server
+  kubernetes.core.k8s:
+    state: present
+    namespace: default
+    definition:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: mysql-pv-claim
+        labels:
+          app: mysql
+          tier: database
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: mysql-pv-storage
+        resources:
+          requests:
+            storage: 10Gi
+
+- name : Get node1
+  shell: kubectl get nodes |  awk '{ print $1}' | grep -v NAME | sed -n '1p'
+  register : node1
+
+
+- name: Create a Deployment for SQL Server
+  kubernetes.core.k8s:
+    state: present
+    namespace: default
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: mysql-deployment
+        labels:
+          app: mysql
+          tier: database
+      spec:
+        selector:
+          matchLabels:
+            app: mysql
+        strategy:
+          type: Recreate
+        template:
+          metadata:
+            labels:
+              app: mysql
+              tier: database
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: "{{ node1.stdout }}"
+            volumes:
+            - name: mysql-persistent-storage
+              persistentVolumeClaim:
+                claimName: mysql-pv-claim
+            containers:
+            - name: mysql
+              image: mysql:latest
+              env: # The variables below could be set on a ConfigMap object
+              - name: MYSQL_DATABASE
+                value: "{{ MYSQL_DATABASE }}"
+              - name: MYSQL_USER
+                value: "{{ MYSQL_USER }}"
+              - name: MYSQL_PASSWORD
+                value: "{{ MYSQL_PASSWORD }}"
+              - name: MYSQL_ROOT_PASSWORD
+                value: "{{ MYSQL_PASSWORD }}"
+              - name: MYSQL_RANDOM_ROOT_PASSWORD
+                value: "{{ MYSQL_PASSWORD }}"
+              - name: MYSQL_ALLOW_EMPTY_PASSWORD
+                value: "true" 
+              ports:
+              - containerPort: 3306
+              volumeMounts:
+              - name: mysql-persistent-storage
+                mountPath: /var/lib/mysql
+ #           nodeSelector:
+ #             cloud.google.com/gke-nodepool: "{{ node2.stdout }}"
+
+- name: Create a service for SQL Server
+  kubernetes.core.k8s:
+    state: present
+    namespace: default
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ MYSQL_HOST }}" # logical name of the service, which will also become the DNS name of the service when it is created.
+        labels:
+          app: mysql
+          tier: database
+      spec:
+        type: ClusterIP
+        selector:
+          app: mysql
+        ports:
+          - targetPort: 3306 # port that containers are listening on
+            port: 3306 # port number exposed internally in the cluster
+
+- name: Get MySQL Pod Name
+  shell: kubectl get pods -l tier=database |awk '{ print $1}' | grep -v NAME
+  register: mysqlpod

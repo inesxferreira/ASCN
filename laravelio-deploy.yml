@@ -1,0 +1,9 @@
+---
+- name: Deploy laravelio
+  hosts: localhost
+  gather_facts: false
+  roles:
+      - db_deplyment
+      - laravelio_deploy
+      
+      

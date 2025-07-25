@@ -1,0 +1,19 @@
+---
+
+- import_playbook: deploy-laravelio.yml
+
+- name: Tests
+  hosts: localhost
+  gather_facts: true
+  roles:
+    - { role: test_admin } #mudar
+
+- import_playbook: undeploy-laravelio.yml
+
+- import_playbook: deploy-laravelio.yml
+
+- name: Tests
+  hosts: localhost
+  gather_facts: yes
+  roles:
+    - { role: test_admin2 } #mudar

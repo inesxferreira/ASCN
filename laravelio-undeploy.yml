@@ -1,0 +1,5 @@
+- name: Undeploy laravelio
+  hosts: localhost
+  roles:     
+    - laravelio_undeploy
+    - db_undeployment
